@@ -1,96 +1,39 @@
-        # BacktestReport
-        byby = 'BacktestReport'
-        window = 350
-        window = 100
-        multi = 2.5
-        fx = u'fx_ltp'
-        s_time = 4
-        e_time = 24
-        data = {'Close': '', 'ma_m': '', 'ma_s': '', 'ub': '', 'lb': '', 'pl': '',
-                'n': '', 'Long': '', 'Short': '', 'LongPL': '', 'ShortPL': '', 'Sum': ''}
-        PL = self.breakout_ma_std(
-            window, multi, s_time, e_time, fx, data, byby, 1)
-        times = self.fx_byby_exec(PL, fx, 0.06, byby)
-        
-        
-            def breakout_ma_std(self, window, multi, para_key1, para_key2, col, data, byby, type):
-        # GMOFX情報取得
-        stuts = 0
-        sqls = "select now,\"" + col + "\" from btcfx2 where rowid=(select max(rowid) from btcfx2);"
-        sql_pd = common.select_sql(self.DB, sqls)
-        data['Close'] = sql_pd.loc[0, col]
+            def ATR_stg(self,code,df):
+        try:
+            df.columns =['O','H','L','C','V','C2','SS']
+            df = compf.add_avg_rng(df,'C','L','H')
+        except:
+            print(code,"ATR_stgエラー")
+            return pd.DataFrame({})
+        y = df.dropna()
+        y['CL']=y.C.shift(1)
+        y['BSTL']=0
+        y['SSTL']=0
+        y['vora']=0
+        #レポート用
+        N = len(y) #FXデータのサイズ
+        LongPL = np.zeros(N) # 買いポジションの損益
+        ShortPL = np.zeros(N) # 売りポジションの損益
+        SumPL = np.zeros(N) # 売りポジションの損益
 
-        # データ更新、データフレームに引き出す
-        tablename = col.replace(r"/", "") + "_" + byby
-        common.insertDB3(self.DB, tablename, data)
-        col_name = ', '.join([k for k in data.keys()])
-        sqls = "select now," + col_name + " from " + tablename
-        tsd = common.select_sql(self.DB, sqls)
+        for i in range(10,len(y)-1):
+            y.vora[i] = int((max(y.H[i],y.CL[i]) - min(y.L[i],y.CL[i])) * 0.85)
+            y.BSTL[i+1] = y.C[i] + y.vora[i]
+            y.SSTL[i+1] = y.C[i] - y.vora[i]
 
-        # 仕掛け処理更新
-        if len(tsd) > window:
-            tsd['ma_m'] = tsd.Close.rolling(window).mean().dropna()
-            tsd['ma_s'] = tsd.Close.rolling(window).std()
-            tsd['ub'] = tsd.ma_m+tsd.ma_s*multi
-            tsd['lb'] = tsd.ma_m-tsd.ma_s*multi
-            tsd['pl'] = tsd['pl'].shift(1)
-            tsd['n'] = tsd['n'].shift(1)
-            tsd['Sum'] = tsd['Sum'].shift(1)
+            SumPL[i]=SumPL[i-1]
+            if y.O[i] < y.BSTL[i] and y.BSTL[i] < y.H[i] and y.BSTL[i] > 0:
+                LongPL[i] = int((y.O[i+1] / y.BSTL[i] -1) * 1000000)
+            if y.O[i] > y.SSTL[i] and y.SSTL[i] > y.L[i] and y.SSTL[i] > 0:
+                ShortPL[i] = int((y.SSTL[i] / y.O[i+1] -1) * 1000000)
 
-            ind = datetime.datetime.now()
-            c = round(float(tsd.Close[len(tsd)-1]), 4)
-            ma_m = round(float(tsd.ma_m[len(tsd)-1]), 4)
-            ma_s = round(float(tsd.ma_s[len(tsd)-1]), 4)
-            ub = round(float(tsd.ub[len(tsd)-1]), 4)
-            lb = round(float(tsd.lb[len(tsd)-1]), 4)
-            LongPL = ""
-            ShortPL = ""
-            if tsd.Sum[len(tsd)-1] == "":
-                pl = 0
-                n = 0
-                Sum = 0
-            else:
-                pl = float(tsd.pl[len(tsd)-1])
-                n = tsd.n[len(tsd)-1]
-                Sum = float(tsd.Sum[len(tsd)-1])
-            try:
-                n = float(tsd.n[len(tsd)-1])
-            except:
-                pass
+            SumPL[i]=SumPL[i]+ShortPL[i]+LongPL[i] #レポート用
 
-            if c < lb and pl == 0 and ind.hour >= para_key1 and ind.hour <= para_key2:  # entry short-position
-                stuts = -1 * type
-                n = c
-                pl = -1
-                # 売り仕掛け
+        y['plb'] = LongPL
+        y['pls'] = ShortPL
+        y['sum'] = SumPL
 
-            if c > ma_m and pl < 0:  # exit short-position
-                stuts = -2 * type
-                ShortPL = round(float(n-c), 4)
-                n = ""
-                pl = 0
-                Sum += ShortPL
-                # 売り仕切り
+        save_name = os.path.join(self.S_DIR, str(code)  + "_ATR_stg_detail.csv")
+        y.to_csv(save_name)
+        return pd.DataFrame({'LongPL':LongPL, 'ShortPL':ShortPL,'Sum':SumPL}, index=y.index)
 
-            if c > ub and pl == 0 and ind.hour >= para_key1 and ind.hour <= para_key2:  # entry short-position
-                stuts = 1 * type
-                n = c
-                pl = 1
-                # 買い仕掛け
-
-            if c < ma_m and pl > 0:  # exit short-position
-                stuts = 2 * type
-                LongPL = round(float(c-n), 4)
-                n = ""
-                pl = 0
-                Sum += LongPL
-                # 買い仕切り
-
-            dict = {'table': tablename, 'key1': ind, 'key2': ma_m, 'key3': ma_s, 'key4': ub,
-                    'key5': lb, 'key6': pl, 'key7': n, 'key8': LongPL, 'key9': ShortPL, 'key10': Sum}
-            sqls = "UPDATE %(table)s SET ma_m = '%(key2)s', ma_s = '%(key3)s',ub = '%(key4)s', lb = '%(key5)s' ,pl = '%(key6)s', n = '%(key7)s', LongPL = '%(key8)s' ,ShortPL = '%(key9)s', Sum = '%(key10)s' where rowid=(select max(rowid) from %(table)s)" % dict
-            common.db_update(self.DB, sqls)
-            return stuts
-
-        
-        
