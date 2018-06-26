@@ -37,3 +37,14 @@
         y.to_csv(save_name)
         return pd.DataFrame({'LongPL':LongPL, 'ShortPL':ShortPL,'Sum':SumPL}, index=y.index)
 
+
+def add_avg_rng(tsd,C,L,H):
+        #乖離平均追加
+        for t in [7,30,200,400]:
+            tsd['rng'+str(t)]=round((tsd[C].shift(1)-tsd[L].rolling(t).min().shift(1))/(tsd[H].rolling(t).max().shift(1)-tsd[L].rolling(t).min().shift(1)),2)
+            tsd['avg'+str(t)]=round(tsd[C].shift(1)/tsd[C].rolling(t).mean().shift(1)-1,2)
+        return tsd
+        
+                    df = pd.DataFrame(index=pd.date_range('2007/01/01', common.env_time()[1][0:10]))
+                    df = df.join(pd.read_csv(code_text,index_col=0, parse_dates=True, encoding="cp932", header=None))
+                    df = df.dropna()
