@@ -1,50 +1,53 @@
-            def ATR_stg(self,code,df):
-        try:
-            df.columns =['O','H','L','C','V','C2','SS']
-            df = compf.add_avg_rng(df,'C','L','H')
-        except:
-            print(code,"ATR_stgエラー")
-            return pd.DataFrame({})
-        y = df.dropna()
-        y['CL']=y.C.shift(1)
-        y['BSTL']=0
-        y['SSTL']=0
-        y['vora']=0
-        #レポート用
-        N = len(y) #FXデータのサイズ
-        LongPL = np.zeros(N) # 買いポジションの損益
-        ShortPL = np.zeros(N) # 売りポジションの損益
-        SumPL = np.zeros(N) # 売りポジションの損益
+    def GOLD_main(self, title):
+        if title == "GOLD16":
+            self.send_msg += "★★★GOLD_16★★★\n"
+            amount = self.GOLD_16()
+            self.send_msg += "★★★GOLD2_16★★★\n"
+            amount += self.GOLD2_16()
+        if title == "GOLD24":
+            self.send_msg += "★★★GOLD_23★★★\n"
+            amount1,amount1_16 = self.GOLD_23()
+            self.send_msg += "★★★GOLD2_24★★★\n"
+            amount2, amount2_16 = self.GOLD2_24()
+            #仕切りチェック
+            self.send_msg += "★★★GOLD2_仕切り★★★\n"
+            amount = amount1 + amount2
+            amount_16 = amount1_16 + amount2_16
+            if (amount > 0 and amount_16 > 0) or (amount < 0 and amount_16 < 0):
+                amount -= amount_16
+            elif amount_16 > 0:
+                msg = c01_hokushin.hoku_settles('東京金',"買")
+                self.send_msg += title + "_" + msg + ":仕切り買い" + "\n"
+            elif amount_16 < 0:
+                msg = c01_hokushin.hoku_settles('東京金',"売")
+                self.send_msg += title + "_" + msg + ":仕切り売り" + "\n"
 
-        for i in range(10,len(y)-1):
-            y.vora[i] = int((max(y.H[i],y.CL[i]) - min(y.L[i],y.CL[i])) * 0.85)
-            y.BSTL[i+1] = y.C[i] + y.vora[i]
-            y.SSTL[i+1] = y.C[i] - y.vora[i]
+        self.send_msg += "★★★GOLD_売買実行★★★\n"
+            #仕切りチェック
+            self.send_msg += "★★★GOLD2_仕切り★★★\n"
+            amount = amount1 + amount2
+            amount_16 = amount1_16 + amount2_16
+            if (amount > 0 and amount_16 > 0) or (amount < 0 and amount_16 < 0):
+                amount -= amount_16
+            elif amount_16 > 0:
+                msg = c01_hokushin.hoku_settles('東京金',"買")
+                self.send_msg += title + "_" + msg + ":仕切り買い" + "\n"
+            elif amount_16 < 0:
+                msg = c01_hokushin.hoku_settles('東京金',"売")
+                self.send_msg += title + "_" + msg + ":仕切り売り" + "\n"
 
-            SumPL[i]=SumPL[i-1]
-            if y.O[i] < y.BSTL[i] and y.BSTL[i] < y.H[i] and y.BSTL[i] > 0:
-                LongPL[i] = int((y.O[i+1] / y.BSTL[i] -1) * 1000000)
-            if y.O[i] > y.SSTL[i] and y.SSTL[i] > y.L[i] and y.SSTL[i] > 0:
-                ShortPL[i] = int((y.SSTL[i] / y.O[i+1] -1) * 1000000)
+        self.send_msg += "★★★GOLD_売買実行★★★\n"
+        amount = self.gold_amount * amount
+        print("GOLD16",self.gold_amount,amount)
 
-            SumPL[i]=SumPL[i]+ShortPL[i]+LongPL[i] #レポート用
+        if amount > 0:
+            bybypara = {'code': '東京金', 'amount': amount, 'buysell': '買','kubun': '成行', 'nari_hiki': '', 'settle': 1, 'comment': '成り行き買い'}
+            result, msg = c01_hokushin.hoku_main(bybypara)
+            self.send_msg += title + "_" + msg + ":" + str(bybypara['amount']) + "_" + str(result) + "\n"
+            self.send_msg += "GOLD_買い戦略_" + str(bybypara['amount']) + "\n"
 
-        y['plb'] = LongPL
-        y['pls'] = ShortPL
-        y['sum'] = SumPL
-
-        save_name = os.path.join(self.S_DIR, str(code)  + "_ATR_stg_detail.csv")
-        y.to_csv(save_name)
-        return pd.DataFrame({'LongPL':LongPL, 'ShortPL':ShortPL,'Sum':SumPL}, index=y.index)
-
-
-def add_avg_rng(tsd,C,L,H):
-        #乖離平均追加
-        for t in [7,30,200,400]:
-            tsd['rng'+str(t)]=round((tsd[C].shift(1)-tsd[L].rolling(t).min().shift(1))/(tsd[H].rolling(t).max().shift(1)-tsd[L].rolling(t).min().shift(1)),2)
-            tsd['avg'+str(t)]=round(tsd[C].shift(1)/tsd[C].rolling(t).mean().shift(1)-1,2)
-        return tsd
-        
-                    df = pd.DataFrame(index=pd.date_range('2007/01/01', common.env_time()[1][0:10]))
-                    df = df.join(pd.read_csv(code_text,index_col=0, parse_dates=True, encoding="cp932", header=None))
-                    df = df.dropna()
+        elif amount < 0:
+            bybypara = {'code': '東京金', 'amount': abs(amount), 'buysell': '売', 'kubun': '成行', 'nari_hiki': '', 'settle': 1, 'comment': '成り行き売り'}
+            result, msg = c01_hokushin.hoku_main(bybypara)
+            self.send_msg += title + "_" + msg + ":" + str(bybypara['amount']) + "_" + str(result) + "\n"
+            self.send_msg += "GOLD_売り戦略_" + str(bybypara['amount']) + "\n"
