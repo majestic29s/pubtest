@@ -1,53 +1,25 @@
-    def GOLD_main(self, title):
-        if title == "GOLD16":
-            self.send_msg += "★★★GOLD_16★★★\n"
-            amount = self.GOLD_16()
-            self.send_msg += "★★★GOLD2_16★★★\n"
-            amount += self.GOLD2_16()
-        if title == "GOLD24":
-            self.send_msg += "★★★GOLD_23★★★\n"
-            amount1,amount1_16 = self.GOLD_23()
-            self.send_msg += "★★★GOLD2_24★★★\n"
-            amount2, amount2_16 = self.GOLD2_24()
-            #仕切りチェック
-            self.send_msg += "★★★GOLD2_仕切り★★★\n"
-            amount = amount1 + amount2
-            amount_16 = amount1_16 + amount2_16
-            if (amount > 0 and amount_16 > 0) or (amount < 0 and amount_16 < 0):
-                amount -= amount_16
-            elif amount_16 > 0:
-                msg = c01_hokushin.hoku_settles('東京金',"買")
-                self.send_msg += title + "_" + msg + ":仕切り買い" + "\n"
-            elif amount_16 < 0:
-                msg = c01_hokushin.hoku_settles('東京金',"売")
-                self.send_msg += title + "_" + msg + ":仕切り売り" + "\n"
+    def Foreigner(self):
+        sqls = "select *,rowid from kabu_list where セクタ NOT IN ('ETF','REIT')"
+        sql_pd = common.select_sql(DB_BYBY, sqls)
+        dict_w = {}
+        dict_w['時価総額ALL'] = 0
+        dict_w['上昇率外人ALL'] = 0
+        dict_w['count'] = 0
+        dict_w['上昇率'] = 0
+        for i, row in sql_pd.iterrows():
+            common.to_number(row)
+            code = str(row['コード'])
+            try:
+                gaijin = float(row['外国'])
+                temp = int(row['時価総額'])
+                vora = row['株価'] / row['DAY1'] -1
+            except:
+                print(row['時価総額'])
+                continue
+            dict_w['上昇率'] += vora
+            dict_w['上昇率外人ALL'] += vora * gaijin
+            dict_w['時価総額ALL'] += row['時価総額']
+            dict_w['count'] += 1
 
-        self.send_msg += "★★★GOLD_売買実行★★★\n"
-            #仕切りチェック
-            self.send_msg += "★★★GOLD2_仕切り★★★\n"
-            amount = amount1 + amount2
-            amount_16 = amount1_16 + amount2_16
-            if (amount > 0 and amount_16 > 0) or (amount < 0 and amount_16 < 0):
-                amount -= amount_16
-            elif amount_16 > 0:
-                msg = c01_hokushin.hoku_settles('東京金',"買")
-                self.send_msg += title + "_" + msg + ":仕切り買い" + "\n"
-            elif amount_16 < 0:
-                msg = c01_hokushin.hoku_settles('東京金',"売")
-                self.send_msg += title + "_" + msg + ":仕切り売り" + "\n"
-
-        self.send_msg += "★★★GOLD_売買実行★★★\n"
-        amount = self.gold_amount * amount
-        print("GOLD16",self.gold_amount,amount)
-
-        if amount > 0:
-            bybypara = {'code': '東京金', 'amount': amount, 'buysell': '買','kubun': '成行', 'nari_hiki': '', 'settle': 1, 'comment': '成り行き買い'}
-            result, msg = c01_hokushin.hoku_main(bybypara)
-            self.send_msg += title + "_" + msg + ":" + str(bybypara['amount']) + "_" + str(result) + "\n"
-            self.send_msg += "GOLD_買い戦略_" + str(bybypara['amount']) + "\n"
-
-        elif amount < 0:
-            bybypara = {'code': '東京金', 'amount': abs(amount), 'buysell': '売', 'kubun': '成行', 'nari_hiki': '', 'settle': 1, 'comment': '成り行き売り'}
-            result, msg = c01_hokushin.hoku_main(bybypara)
-            self.send_msg += title + "_" + msg + ":" + str(bybypara['amount']) + "_" + str(result) + "\n"
-            self.send_msg += "GOLD_売り戦略_" + str(bybypara['amount']) + "\n"
+        dict_w['加重平均外人'] = dict_w['上昇率外人ALL'] / dict_w['時価総額ALL']
+        dict_w['加重平均'] = dict_w['上昇率'] / dict_w['時価総額ALL']
