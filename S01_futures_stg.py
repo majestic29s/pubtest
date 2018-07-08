@@ -39,33 +39,10 @@ class S01_futures_stg(object):
 
     def n225_pojistion_count(self):
         dict_w = {}
-        # アノマリーポジションチェック
-        sqls = "select *,rowid from %(table)s where rowid=(select max(rowid) from %(table)s) ;" % {'table': 'poji'}
-        sql_pd = common.select_sql(BYBY_DB, sqls)
-        dict_w['anomari'] = sql_pd['anomari'][0]
         # ポジションDB更新
         dict_w['buy'], dict_w['sell'] = s01_gmo.check_positon_mini()
         common.insertDB3(BYBY_DB, 'poji', dict_w)
         return int(dict_w['buy']), int(dict_w['sell'])
-
-    def anomari_poji_update(self, amount):
-        dict_w = {}
-        table_name = 'poji'
-        dict_w['anomari'] = amount
-        sqls = "select *,rowid from %(table)s where rowid=(select max(rowid) from %(table)s) ;" % {'table': table_name}
-        sql_pd = common.select_sql(BYBY_DB, sqls)
-        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
-
-    def anomari_poji_update2(self, dict_w):
-        sqls = "select *,rowid from %(table)s where rowid=(select max(rowid) from %(table)s) ;" % {'table': table_name}
-        sql_pd = common.select_sql(BYBY_DB, sqls)
-        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
-
-    def anomari_poji_select(self):
-        table_name = 'ano_poji'
-        sqls = "select *,rowid from %(table)s where rowid=(select max(rowid) from %(table)s) ;" % {'table': table_name}
-        sql_pd = common.select_sql(BYBY_DB, sqls)
-        return sql_pd['amount'][0],sql_pd
 
     def N225_get_data(self):
         table_name = 'J225L'
@@ -79,10 +56,10 @@ class S01_futures_stg(object):
         sql_pd = common.select_sql(DB_INFO, sqls)
         num = len(sql_pd)-2
         # 限月の妥当性チェック 使えるか?
-        if sql_pd.loc[num, '現在値'] == '--':
-            gen = sql_pd.loc[num+1, '限月']
+        if sql_pd['現在値'][num] == '--':
+            gen = sql_pd['限月'][num+1]
         else:
-            gen = sql_pd.loc[num, '限月']
+            gen = sql_pd['限月'][num]
         # 終値期限now取得
         dict = {'table': table_name, 'key2': yest_day, 'key3': gen}
         sqls = "select *,SUBSTR(now,12,2) as T,rowid from %(table)s where rowid=(select max(rowid) from %(table)s where 限月 = '%(key3)s') " % dict
@@ -124,11 +101,11 @@ class S01_futures_stg(object):
         sqls = "select *,rowid from %(table)s where now > '%(key1)s'" % dict
         sql_pd = common.select_sql(DB_RASHIO, sqls)
         num = len(sql_pd)-1
-        dict_w['now_last'] = sql_pd.loc[0, 'now']
-        dict_w['始値'] = sql_pd.loc[0, 'N225openD']
+        dict_w['now_last'] = sql_pd['now'][0]
+        dict_w['始値'] = sql_pd['N225openD'][0]
         dict_w['高値'] = max(sql_pd['N225highD'])
         dict_w['安値'] = min(sql_pd['N225lowD'])
-        dict_w['終値'] = sql_pd.loc[num, 'N225closeD']
+        dict_w['終値'] = sql_pd['N225closeD'][num]
         # データテーブルへ追加
         if upflag == 1:  # upflag=1はWEEK売りとの区別
             # rowid取得
@@ -169,8 +146,7 @@ class S01_futures_stg(object):
         if dict_w['安値'] <= sell:
             dict_w['売り決済'] = sell - dict_w['終値']
             dict_w['売り合計'] = ""
-        sqls = common.create_update_sql(
-            BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
+        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0]) #最後の引数を削除すると自動的に最後の行
         # ////////////////////////////////////////////////// #
         # ---------------- 仕掛データ取得 ---------------- #
         # ////////////////////////////////////////////////// #
@@ -181,7 +157,7 @@ class S01_futures_stg(object):
         sqls = "select INDU_IND,rowid from %(table)s where INDU_IND IS NOT NULL" % dict
         sql_pd = common.select_sql(DB_RASHIO, sqls)
         num = len(sql_pd)-1
-        dict_w['DJI_DIFF'] = int(float(sql_pd.loc[num, 'INDU_IND']) - float(sql_pd.loc[num-1, 'INDU_IND']))
+        dict_w['DJI_DIFF'] = int(float(sql_pd['INDU_IND'][num]) - float(sql_pd['INDU_IND'][num-1]))
         # 仕掛値の切り上げ、切り下げ
         bf = 10
         dict_w['買いSTL'] = self.round_up_down(dict_e['高値']+bf, -1, "買")
@@ -205,7 +181,6 @@ class S01_futures_stg(object):
         dict_w.update(common.info_index())
         common.insertDB3(BYBY_DB, table_name, dict_w)
         # ポジションDB更新
-        n_buy, n_sell = self.n225_pojistion_count()
         common.sum_clce(BYBY_DB, table_name, '買い決済', '買い合計', 0)
         common.sum_clce(BYBY_DB, table_name, '売り決済', '売り合計', 0)
 
@@ -221,8 +196,7 @@ class S01_futures_stg(object):
         l_buy = int(sql_pd['buy'][0])
         l_sell = int(sql_pd['sell'][0])
         # ポジションDB更新
-        n_buy, n_sell = self.n225_pojistion_count()
-
+        n_buy, n_sell = s01_gmo.check_positon_mini()
         # ////////////////////////////////////////////////// #
         # ---------------- 決済処理 ---------------- #
         # ////////////////////////////////////////////////// #
@@ -232,13 +206,14 @@ class S01_futures_stg(object):
             anomari_amount = glob.glob(files)  # ワイルドカードが使用可能
             s_buy = n_buy
             s_sell = n_sell
-            if len(anomari_amount) > 0:
-                if anomari_amount[0].count("BUY"):
-                    s_buy = n_buy - self.n225_anomari_amount
+            cnt,TYPE= self.anomari_poji_select()
+            if cnt > 0:
+                if TYPE == 'buy':
+                    s_buy = n_buy - cnt
                     if s_buy < 0:
                         s_buy = 0
-                elif anomari_amount[0].count("PUT"):
-                    s_sell = n_sell - self.n225_anomari_amount
+                elif TYPE == 'sell':
+                    s_sell = n_sell - cnt
                     if s_sell < 0:
                         s_sell = 0
 
@@ -317,67 +292,25 @@ class S01_futures_stg(object):
             # 買い売りしかけ
             numt = len(sql_pd)-1
             m=sql_pd['終値'].rolling(5).mean()
-            dict_w['S0C_avg5'] = float(sql_pd.loc[numt, '終値']) / m[numt]
+            dict_w['S0C_avg5'] = float(sql_pd['終値'][numt]) / m[numt]
             dict_w['vora'] = dict_w['幅85'] / row['終値']
 #            if dict_w['S0C_avg5'] < 1.05:
             if dict_w['vora'] < 0.03:
                 bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': self.weekly_exec_amount, 'buysell': '売','kubun': '新規', 'nari_hiki': '', 'settle': dict_w['売りSTL'], 'comment': 'N225週次STL売り_週始'}
                 result, msg = s01_gmo.gmo_main(bybypara)
-                self.send_msg += msg + "\n"
+                self.send_msg += msg + "_" +dict_w['売りSTL'] + "\n"
                 dict_w['memo'] = "sell"
 #            if dict_w['S0C_avg5'] > 0.97:
             if dict_w['vora'] < 0.03:
                 bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': self.weekly_exec_amount, 'buysell': '買','kubun': '新規', 'nari_hiki': '', 'settle': dict_w['買いSTL'], 'comment': 'N225週次STL買い_週始'}
                 result,msg = s01_gmo.gmo_main(bybypara)
-                self.send_msg += msg + "\n"
+                self.send_msg += msg + "_" +dict_w['買いSTL'] + "\n"
                 dict_w['memo'] += "buy"
             common.insertDB3(BYBY_DB, table_name, dict_w)
 
         common.sum_clce(BYBY_DB, table_name, '買い決済', '買い合計', 0)
         common.sum_clce(BYBY_DB, table_name, '売り決済', '売り合計', 0)
 
-    def n225_anomari(self):
-        amount = self.n225_anomari_amount
-        flag_buy = common.save_path(common.DROP_DIR, "N225_BUY" + "_" + str(amount))
-        flag_sell = common.save_path(common.DROP_DIR, "N225_PUT" + "_" + str(amount))
-        t = datetime.datetime.now()
-        date_mmdd = t.strftime("%m%d")
-        # 決済処理条件
-        if ("0430" < date_mmdd < "0510" or "1231" < date_mmdd < "0110") and os.path.exists(flag_buy):
-            print("N225アノマリー決済買")
-            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買','kubun': '決済', 'nari_hiki': '', 'settle': 1, 'comment': 'N225アノマリー決済買'}
-            result, msg = s01_gmo.gmo_main(bybypara)
-            self.send_msg += msg + "\n"
-            os.remove(flag_buy)
-            self.anomari_poji_update(0)
-        if ("0614" < date_mmdd < "0620" or "0831" < date_mmdd < "0910") and os.path.exists(flag_sell):
-            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売','kubun': '決済', 'nari_hiki': '', 'settle': 1, 'comment': 'N225アノマリー決済売'}
-            result, msg = s01_gmo.gmo_main(bybypara)
-            self.send_msg += msg + "\n"
-            os.remove(flag_sell)
-            self.anomari_poji_update(0)
-
-        # フラグがある場合は終了
-        if os.path.exists(flag_buy) or os.path.exists(flag_sell):
-            return
-        # 仕掛処理条件
-        if "0315" < date_mmdd < "0401" or "1115" < date_mmdd < "1201":
-            common.create_file(flag_buy)
-            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買','kubun': '新規', 'nari_hiki': '', 'settle': 0, 'comment': 'N225アノマリー新規買'}
-            if "1115" < date_mmdd < "1201" or "0101" < date_mmdd < "0110":
-                bybypara['nari_hiki'] = '次限月'
-            result, msg = s01_gmo.gmo_main(bybypara)
-            self.send_msg += msg + "\n"
-            self.anomari_poji_update(amount)
-        if "0501" < date_mmdd < "0515" or "0715" < date_mmdd < "0801":
-            print("N225アノマリー新規売")
-            common.create_file(flag_sell)
-            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売','kubun': '新規', 'nari_hiki': '', 'settle': 0, 'comment': 'N225アノマリー新規売'}
-            if "0501" < date_mmdd < "0515":
-                bybypara['nari_hiki'] = '次限月'
-            result, msg = s01_gmo.gmo_main(bybypara)
-            self.send_msg += msg + "\n"
-            self.anomari_poji_update(amount*-1)
 
     def IV_weekly_End(self):
         table_name = "N225_Weekly_IV"
@@ -469,7 +402,7 @@ class S01_futures_stg(object):
         dict_w['sum'] = sum(dict_w.values())
         dict_w['stop'] = len([i for i in dict_w.values() if i == 0])
         # DB更新
-        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
+        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name) #最後の引数を削除すると自動的に最後の行
 
         #トレード
         if dict_w['stop'] > 0:
@@ -612,8 +545,7 @@ class S01_futures_stg(object):
         dict_w["寄り付き乖離率日経平均"] = round((int(dict_w["気配値"]) / int(sql_pd['終値'][0])) - 1, 2)
         dict_w["寄り付き乖離率365"] = round((int(dict_w["SO_365"]) / int(sql_pd['C_365'][0])) - 1, 2)
         # DB更新
-        sqls = common.create_update_sql(
-            BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
+        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
 
     def daily_exec_W(self):
         # 本日のリアルデータ
@@ -626,17 +558,16 @@ class S01_futures_stg(object):
         num = len(sql_pd) - 1
         t_min = min(dict_t['N225lowD'], dict_t['N225lowN'])
         t_max = max(dict_t['N225highD'], dict_t['N225highN'])
-
 #        if float(sql_pd.loc[num, '幅85']) / int(sql_pd.loc[num-1, '終値']) < 0.03 and t_min > sql_pd.loc[num, '売りSTL']:
-        if sql_pd.loc[num, 'memo'].count('buy') and t_min > sql_pd.loc[num, '売りSTL']:
-            print('N225週次STL売り', sql_pd.loc[num, '売りSTL'])
-            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': self.daily_exec_W_amount, 'buysell': '売', 'kubun': '新規','nari_hiki': '', 'settle': sql_pd.loc[num, '売りSTL'], 'comment': 'N225週次STL売り'}
+        if sql_pd['memo'][num].count('buy') and t_min > sql_pd['売りSTL'][num]:
+            print('N225週次STL売り', sql_pd['売りSTL'][num])
+            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': self.daily_exec_W_amount, 'buysell': '売', 'kubun': '新規','nari_hiki': '', 'settle': int(sql_pd['売りSTL'][num]), 'comment': 'N225週次STL売り'}
             result, msg = s01_gmo.gmo_main(bybypara)
 
 #        if  float(sql_pd.loc[num, '幅85']) / int(sql_pd.loc[num-1, '終値']) < 0.03  and t_max < sql_pd.loc[num, '買いSTL']:
-        if sql_pd.loc[num, 'memo'].count('sell') and t_max < sql_pd.loc[num, '買いSTL']:
-            print("N225週次STL買い", sql_pd.loc[num, '買いSTL'])
-            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': self.daily_exec_W_amount, 'buysell': '買', 'kubun': '新規','nari_hiki': '', 'settle': sql_pd.loc[num,'買いSTL'], 'comment': 'N225週次STL買い'}
+        if sql_pd['memo'][num].count('sell') and t_max < sql_pd['買いSTL'][num]:
+            print("N225週次STL買い", sql_pd['買いSTL'][num])
+            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': self.daily_exec_W_amount, 'buysell': '買', 'kubun': '新規','nari_hiki': '', 'settle': int(sql_pd['買いSTL'][num]), 'comment': 'N225週次STL買い'}
 
             result,msg = s01_gmo.gmo_main(bybypara)
 
@@ -654,7 +585,7 @@ class S01_futures_stg(object):
         sql_pd = common.select_sql(BYBY_DB, sqls)
         if len(sql_pd) > 0:
             dict_w['損益'] = dict_w['決済1630'] - sql_pd['現在1450'][0]
-            sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
+            sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0]) #最後の引数を削除すると自動的に最後の行
         # ////////////////////////////////////////////////// #
         # ---------------- 仕掛データ取得 ---------------- #
         # ////////////////////////////////////////////////// #
@@ -796,6 +727,7 @@ class S01_futures_stg(object):
             if sql_pd3['仕掛け乖離'][0] == 1:
                 dict_e, dict_d, dict_n = self.N225_get_data()
                 dict_wL['乖離決済'] = dict_n['始値'] - dict_wL['N終値']
+            dict_wL['S3_O_N'] = dict_n['始値']
 
             sqls = common.create_update_sql(BYBY_DB, dict_wL, table_name, sql_pd3['rowid'][0])
 
@@ -827,7 +759,7 @@ class S01_futures_stg(object):
         sqls = "select *,rowid from %(table)s where now > '%(key1)s'" % dict
         sql_pd = common.select_sql(DB_INFO, sqls)
         num = len(sql_pd)-2
-        gen = sql_pd.loc[num, '限月']
+        gen = sql_pd['限月'][num]
         # 限月の妥当性チェック 使えるか?
         if sql_pd.loc[num, '現在値'] == '--':
             gen = sql_pd.loc[num-1, '限月']
@@ -905,10 +837,11 @@ class S01_futures_stg(object):
         sql_pd = common.select_sql(BYBY_DB, sqls)
         if sql_pd['memo'][0] == "buy":
             dict_w['LongPL'] = dict_w['S3_O'] - dict_w['S2_O']
-        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0])
+        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name, sql_pd['rowid'][0]) #最後の引数を削除すると自動的に最後の行
         # ////////////////////////////////////////////////// #
         # ---------------- 仕掛データ取得 ---------------- #
         # ////////////////////////////////////////////////// #
+        dict_w = {}
         dict_w['S0_C'] = dict_n['終値']
         dict_w['S1_C'] = dict_e['終値']
 
@@ -918,22 +851,183 @@ class S01_futures_stg(object):
         # ////////////////////////////////////////////////// #
         # ---------------- 仕掛データ実行とデータ更新--------- #
         # ////////////////////////////////////////////////// #
-
         if dict_w['S1_14'] > dict_w['S1_C'] and dict_w['S0_C'] < dict_w['S1_C'] and common.weeks() != 'Tue':
             common.create_file(self.poji_flag_nigth)
             dict_w['amount'] = self.nigth_amount
             dict_w['memo'] = "buy"
             bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': dict_w['amount'], 'buysell': '買', 'kubun': '新規','nari_hiki': '', 'settle': 0, 'comment': 'オーバーナイト買い'}
+
             result, msg = s01_gmo.gmo_main(bybypara)
             self.send_msg += msg  + "_建玉:" + str(dict_w['amount']) + "\n"
         dict_w.update(common.info_index())
         common.insertDB3(BYBY_DB, table_name, dict_w)
         # ポジションDB更新
-#        n_buy, n_sell = self.n225_pojistion_count()
 #        common.sum_clce(BYBY_DB, table_name, '決済', '合計', 0)
+    def n225_anomari(self):
+        amount = self.n225_anomari_amount
+        flag_buy = common.save_path(common.DROP_DIR, "N225_BUY" + "_" + str(amount))
+        flag_sell = common.save_path(common.DROP_DIR, "N225_PUT" + "_" + str(amount))
+        t = datetime.datetime.now()
+        date_mmdd = t.strftime("%m%d")
+        # 決済処理条件
+        if ("0430" < date_mmdd < "0510" or "1231" < date_mmdd < "0110") and os.path.exists(flag_buy):
+            print("N225アノマリー決済買")
+            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買','kubun': '決済', 'nari_hiki': '', 'settle': 1, 'comment': 'N225アノマリー決済買'}
+            result, msg = s01_gmo.gmo_main(bybypara)
+            self.send_msg += msg + "\n"
+            os.remove(flag_buy)
+            self.anomari_check_end()
+        if ("0614" < date_mmdd < "0620" or "0831" < date_mmdd < "0910") and os.path.exists(flag_sell):
+            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売','kubun': '決済', 'nari_hiki': '', 'settle': 1, 'comment': 'N225アノマリー決済売'}
+            result, msg = s01_gmo.gmo_main(bybypara)
+            self.send_msg += msg + "\n"
+            os.remove(flag_sell)
+            self.anomari_check_end()
+
+        # フラグがある場合は終了
+        if os.path.exists(flag_buy) or os.path.exists(flag_sell):
+            return
+        # 仕掛処理条件
+        if "0315" < date_mmdd < "0401" or "1115" < date_mmdd < "1201":
+            common.create_file(flag_buy)
+            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買','kubun': '新規', 'nari_hiki': '', 'settle': 0, 'comment': 'N225アノマリー新規買'}
+            if "1115" < date_mmdd < "1201" or "0101" < date_mmdd < "0110":
+                bybypara['nari_hiki'] = '次限月'
+            result, msg = s01_gmo.gmo_main(bybypara)
+            self.send_msg += msg + "\n"
+            self.anomari_check_start('buy')
+        if "0501" < date_mmdd < "0515" or "0715" < date_mmdd < "0801":
+            print("N225アノマリー新規売")
+            common.create_file(flag_sell)
+            bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売','kubun': '新規', 'nari_hiki': '', 'settle': 0, 'comment': 'N225アノマリー新規売'}
+            if "0501" < date_mmdd < "0515":
+                bybypara['nari_hiki'] = '次限月'
+            result, msg = s01_gmo.gmo_main(bybypara)
+            self.send_msg += msg + "\n"
+            self.anomari_check_start('sell')
+
+
+    def anomari_check(self):
+        table_name = 'ano_check'
+        dict_w = {}
+        amount = self.n225_anomari_amount
+        sqls = "select *,rowid from %(table)s where rowid=(select max(rowid) from %(table)s) and status = '1';" % {'table': table_name}
+        sql_pd = common.select_sql(BYBY_DB, sqls)
+        if len(sql_pd) > 0:
+            #辞書へ挿入
+            dict_w = sql_pd.to_dict('records')
+            dict_w[0].pop("rowid")
+            dict_w[0].pop("now")
+            dict_w = dict_w[0]
+            tempa = dict_w['amount']
+            #リアルデータ取得
+            dict_e, dict_d, dict_n = self.N225_get_data()
+            dict_w['S1_R'] = dict_e['終値']
+            if sql_pd.S1_S[0] == 1:  #初期化
+                if dict_w['TYPE'] == 'buy':
+                    value_w = -1
+                else:
+                    value_w = 1
+                dict_w['S1_S'] = dict_e['始値']
+                dict_w['S2_ADD'] = dict_w['S1_S'] + 500 * value_w
+                dict_w['S2_STL'] = dict_w['S1_S'] + 1000 * value_w * -1
+                dict_w['S2_STL_ADD'] = dict_w['S1_S'] + 500 * value_w * -1
+                dict_w['S2_ADD_F'] = 0
+                dict_w['S2_STL_F'] = 0
+                dict_w['amount'] = amount
+                sqls = common.create_update_sql(BYBY_DB, dict_w, table_name) #最後の引数を削除すると自動的に最後の行
+            elif dict_w['TYPE'] == 'buy':
+                if dict_w['S1_R'] < sql_pd.S2_ADD[0] and sql_pd.S2_ADD_F[0] == 0:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買', 'kubun': '新規','nari_hiki': '', 'settle': 0, 'comment': '成行買い'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "_建玉:" + str(amount) + "\n"
+                    dict_w['S2_ADD_F'] = 1
+                    dict_w['amount'] += amount
+                elif dict_w['S1_R'] > sql_pd.S1_S[0] and sql_pd.S2_ADD_F[0] == 1:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買','kubun': '', 'nari_hiki': '', 'settle': 1, 'comment': '買い_決済'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "建玉:" + str(amount) + "\n"
+                    dict_w['S2_ADD_F'] = 0
+                    dict_w['amount'] -= amount
+
+                if dict_w['S1_R'] > sql_pd.S2_STL[0] and sql_pd.S2_STL_F[0] == 0:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買','kubun': '', 'nari_hiki': '', 'settle': 1, 'comment': '買い_決済'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "_建玉:" + str(amount) + "\n"
+                    dict_w['S2_STL_F'] = 1
+                    dict_w['amount'] -= amount
+                elif dict_w['S1_R'] < sql_pd.S2_STL_ADD[0] and sql_pd.S2_STL_F[0] == 1:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '買', 'kubun': '新規','nari_hiki': '', 'settle': 0, 'comment': '成行買い'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "建玉:" + str(amount) + "\n"
+                    dict_w['S2_STL_F'] = 0
+                    dict_w['amount'] += amount
+
+            elif dict_w['TYPE'] == 'sell':
+                if dict_w['S1_R'] > sql_pd.S2_ADD[0] and sql_pd.S2_ADD_F[0] == 0:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売', 'kubun': '新規','nari_hiki': '', 'settle': 0, 'comment': '成行売い'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "_建玉:" + str(amount) + "\n"
+                    dict_w['S2_ADD_F'] = 1
+                    dict_w['amount'] += amount
+                elif dict_w['S1_R'] < sql_pd.S1_S[0] and sql_pd.S2_ADD_F[0] == 1:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売','kubun': '', 'nari_hiki': '', 'settle': 1, 'comment': '売い_決済'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "建玉:" + str(amount) + "\n"
+                    dict_w['S2_ADD_F'] = 0
+                    dict_w['amount'] -= amount
+
+                if dict_w['S1_R'] < sql_pd.S2_STL[0] and sql_pd.S2_STL_F[0] == 0:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売','kubun': '', 'nari_hiki': '', 'settle': 1, 'comment': '売い_決済'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "_建玉:" + str(amount) + "\n"
+                    dict_w['S2_STL_F'] = 1
+                    dict_w['amount'] -= amount
+                elif dict_w['S1_R'] > sql_pd.S2_STL_ADD[0] and sql_pd.S2_STL_F[0] == 1:
+                    bybypara = {'code': '銘柄選択(ﾐﾆ)', 'amount': amount, 'buysell': '売', 'kubun': '新規','nari_hiki': '', 'settle': 0, 'comment': '成行売い'}
+                    result, msg = s01_gmo.gmo_main(bybypara)
+                    self.send_msg += msg + "建玉:" + str(amount) + "\n"
+                    dict_w['S2_STL_F'] = 0
+                    dict_w['amount'] += amount
+
+            if tempa != dict_w['amount']:
+                common.insertDB3(BYBY_DB, table_name, dict_w)
+
+    def anomari_check_start(self,TYPE):
+        table_name = 'ano_check'
+        end_day = (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y/%m/%d")
+        dict_w = {'amount': self.n225_anomari_amount, 'TYPE': TYPE, 'status': 1,'S1_S':1,'終了日':end_day}
+        common.insertDB3(BYBY_DB, table_name, dict_w)
+
+    def anomari_check_end(self):
+        table_name = 'ano_check'
+        dict_w = {'amount': 0, 'status': 0}
+        sqls = common.create_update_sql(BYBY_DB, dict_w, table_name) #最後の引数を削除すると自動的に最後の行
+
+    def anomari_poji_select(self):
+        table_name = 'ano_check'
+        sqls = "select *,rowid from %(table)s where rowid=(select max(rowid) from %(table)s) and status = '1' ;" % {'table': table_name}
+        sql_pd = common.select_sql(BYBY_DB, sqls)
+        if len(sql_pd) > 0:
+            print(common.date_diff(sql_pd['終了日'][0], common.next_day()))
+            return sql_pd['amount'][0],sql_pd['TYPE'][0]
+        else:
+            return 0,0
+
+    def after_update(self):
+        # 全テーブル情報取得
+        sqls = "select name from sqlite_master where type='table'"
+        sql_pd = common.select_sql(BYBY_DB, sqls)
+        for i, rrow in sql_pd.iterrows():
+            table_name = rrow['name']
+            common.sum_clce(BYBY_DB, table_name, '買い決済', '買い合計')
+            common.sum_clce(BYBY_DB, table_name, '売り決済', '売り合計')
 
 if __name__ == '__main__':  # 土曜日は5 datetime.datetime.now().weekday()
     info = S01_futures_stg()
+#    info.anomari_check_start('buy')
+#    info.anomari_check()
+#    info.anomari_check_end()
     argvs = sys.argv
     today = datetime.date.today()
     if argvs[1] == "nigth_settle":  # 525位
@@ -973,10 +1067,13 @@ if __name__ == '__main__':  # 土曜日は5 datetime.datetime.now().weekday()
     if argvs[1] == "hikenari_settle":  # 1610位
         info.nigth_settle('N225成行')
         info.settle_hike()
-        info.over_night() #settle_hikeの前に実施
+        info.over_night()  #settle_hikeの前に実施
+        info.anomari_check()
+
 
     if argvs[1] == "nigth_exec":  # 2100位
-        info.daily_exec_D('J225L_2130', [0,1,2,3])
+        info.daily_exec_D('J225L_2130', [0, 1, 2, 3])
+        info.after_update()
 
     common.mail_send(u'N225トレード_Daily', info.send_msg)
 
