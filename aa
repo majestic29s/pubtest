@@ -1,25 +1,30 @@
-    def Foreigner(self):
-        sqls = "select *,rowid from kabu_list where セクタ NOT IN ('ETF','REIT')"
-        sql_pd = common.select_sql(DB_BYBY, sqls)
-        dict_w = {}
-        dict_w['時価総額ALL'] = 0
-        dict_w['上昇率外人ALL'] = 0
-        dict_w['count'] = 0
-        dict_w['上昇率'] = 0
-        for i, row in sql_pd.iterrows():
-            common.to_number(row)
-            code = str(row['コード'])
-            try:
-                gaijin = float(row['外国'])
-                temp = int(row['時価総額'])
-                vora = row['株価'] / row['DAY1'] -1
-            except:
-                print(row['時価総額'])
-                continue
-            dict_w['上昇率'] += vora
-            dict_w['上昇率外人ALL'] += vora * gaijin
-            dict_w['時価総額ALL'] += row['時価総額']
-            dict_w['count'] += 1
+        table_name = "rashio"
+        UURL = "https://www.traders.co.jp/margin/transition/transition.asp"
+        # テーブル情報取得
+#        dfs = common.read_html2(UURL, 1)  # header=0,skiprows=0(省略可能)
+        ret = requests.get(UURL)
 
-        dict_w['加重平均外人'] = dict_w['上昇率外人ALL'] / dict_w['時価総額ALL']
-        dict_w['加重平均'] = dict_w['上昇率'] / dict_w['時価総額ALL']
+        # テーブル情報取得
+#        dfs = pd.read_html(UURL, header=1, skiprows=0)
+#        ret = requests.get(UURL)
+#        dfs = pd.read_html(ret)
+
+
+
+Traceback (most recent call last):
+  File "C:\Anaconda3\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 600, in urlopen
+    chunked=chunked)
+  File "C:\Anaconda3\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 345, in _make_request
+    self._validate_conn(conn)
+  File "C:\Anaconda3\lib\site-packages\requests\packages\urllib3\connectionpool.py", line 844, in _validate_conn
+    conn.connect()
+  File "C:\Anaconda3\lib\site-packages\requests\packages\urllib3\connection.py", line 326, in connect
+    ssl_context=context)
+  File "C:\Anaconda3\lib\site-packages\requests\packages\urllib3\util\ssl_.py", line 325, in ssl_wrap_socket
+    return context.wrap_socket(sock, server_hostname=server_hostname)
+  File "C:\Anaconda3\lib\site-packages\requests\packages\urllib3\contrib\pyopenssl.py", line 445, in wrap_socket
+    raise ssl.SSLError('bad handshake: %r' % e)
+ssl.SSLError: ("bad handshake: SysCallError(-1, 'Unexpected EOF')",)
+
+
+urllib.error.URLError: <urlopen error EOF occurred in violation of protocol (_ssl.c:749)>
