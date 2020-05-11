@@ -3,9 +3,12 @@ import time
 import warnings
 import numpy as np
 from numpy import newaxis
-from keras.layers.core import Dense, Activation, Dropout
+from keras.layers.core import Dense
+from keras.layers.core import Activation
+from keras.layers.core import Dropout
 from keras.layers.recurrent import LSTM
 from keras.models import Sequential
+
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 warnings.filterwarnings("ignore")
@@ -88,3 +91,14 @@ def predict_sequences_multiple(model, data, window_size, prediction_len):
             curr_frame = np.insert(curr_frame, [window_size-1], predicted[-1], axis=0)
         prediction_seqs.append(predicted)
     return prediction_seqs
+
+
+
+if __name__ == '__main__':
+    epoch = 1
+    seq_len = 50
+    X_train, y_train, X_test, y_test = load_data(r'C:\data\90_profit\05_input\SP500.csv', seq_len, True)
+    model = build_model([1, 50, 100, 1])
+    model.fit(X_train, y_train, batch_size=512, nb_epoch=epoch, validation_split=0.05)
+    predictions = predict_sequences_multiple(model,X_test,seq_len,50)
+    print("end", __file__)
